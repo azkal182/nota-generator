@@ -1,6 +1,6 @@
 "use client";
 // @ts-nocheck
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form';
 import Logo from '../../public/assets/img/logo.png'
 import { Lobster, Secular_One, Roboto } from "next/font/google";
@@ -8,8 +8,12 @@ import Image from 'next/image';
 import * as htmlToImage from 'html-to-image';
 import { toPng, toJpeg, toBlob, toPixelData, toSvg } from 'html-to-image'
 import { useHotkeys } from 'react-hotkeys-hook';
-// import io from "socket.io-client";
-// let socket;
+import { Dialog, Transition } from '@headlessui/react';
+import io from "socket.io-client";
+
+const socket = io("http://localhost:8000");
+
+
 const seculerOne = Secular_One({ subsets: ['latin'], weight: ["400"] })
 const roboto = Roboto({ subsets: ['latin'], weight: ["400"] })
 const lobster = Lobster({ subsets: ['latin'], weight: ["400"] })
@@ -23,44 +27,79 @@ function PageHome() {
     const [data, setdata] = useState<IData[]>([])
     const [date, setDate] = useState('');
     const printRef = useRef(null);
-    const { register, reset, handleSubmit, watch, setFocus,setValue, formState: { errors } } = useForm();
+    const { register, reset, handleSubmit, watch, setFocus, setValue, formState: { errors } } = useForm();
+    const [loading, setLoading] = useState(false)
+    let [isOpen, setIsOpen] = useState(false)
+    const [message, setMessage] = useState("");
+    const [getData, setGetData] = useState(false)
+    const [panjang, setPanjang] = useState(1)
+    const [lebar, setLebar] = useState(1)
+    const [qty, setQty] = useState(1)
+    const [total, setTotal] = useState(0)
+    const [harga, setHarga] = useState(0)
+    const [qr, setQr] = useState("")
+    const [nameProduct, setNameProduct] = useState('')
+    const [customer, setCustomer] = useState({
+        name:'',
+        noTlp:null
+    })
+    const [nameCustomer, setNameCustomer] = useState('')
+    const [toCustomer, setToCustomer] = useState('')
 
-    const onSubmit = (formData: any) => {
-        setdata([...data, { ...formData }]);
-        reset()
-        const nameInput = document.getElementById('name');
-    if (nameInput) {
-      nameInput.focus();
+
+    const panjangOnchage = () => {
+        console.log(panjang);
     }
-    };
-    const grandTotal = data.reduce((accumulator, currentValue) => accumulator + parseFloat(currentValue.total), 0);
+    const lebarOnchage = () => {
+        console.log(lebar);
+    }
+
+
+
     useEffect(() => {
-        const subscription = watch((value, { name, type }) => console.log(value, name, type));
-        return () => subscription.unsubscribe();
-    }, [watch]);
+        // menangani event "message" dari server
+        socket.on("message", (data) => {
+          setMessage(data);
+        });
 
-    // useEffect(() => {
-    //     socketInitializer();
-    //   }, []);
+        socket.on("qr", (data) => {
+            console.log('qr received', data);
+            setGetData(false)
+            setQr(data);
+          });
 
-    //   const socketInitializer = async () => {
-    //     // We just call it because we don't need anything else out of it
-    //     await fetch("http://localhost:8000");
+        // menangani event "connect" dari server
+        socket.on("connect", () => {
+          console.log("Terhubung ke server WebSocket");
+        });
 
-    //     socket = io();
-    //     socket.on("connection", (msg) => {
-    //       console.log(msg);
-    //     });
-    //   };
-    const calculateTotal = (qty: number, price: number) => {
+        socket.on("ready", () => {
+            setQr('')
+            setGetData(false)
+          });
+
+        // menangani event "disconnect" dari server
+        socket.on("disconnect", () => {
+          console.log("Terputus dari server WebSocket");
+        });
+
+        // membersihkan event listener saat komponen unmount
+        return () => {
+          socket.off("message");
+          socket.off("connect");
+          socket.off("disconnect");
+        };
+      }, []);
+
+      const calculateTotal = (qty: number, price: number) => {
         return qty * price;
     }
 
     useHotkeys('f1', (event) => {
         event.preventDefault(); // Mencegah default browser shortcut F1
         // handleF1();
-        alert('F1 diteken')
-      });
+        openModal()
+    });
     const handleQtyChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const { value } = event.target;
         const qty = Number(value);
@@ -85,8 +124,21 @@ function PageHome() {
 
         toPng(printRef.current, { cacheBust: true, })
             .then(async (dataUrl) => {
-                 sendNota(dataUrl)
                 console.log(dataUrl);
+
+                console.log({
+                    name:customer.name,
+                    no:toCustomer,
+                    grandTotal: grandTotal
+                });
+
+
+                setLoading(true)
+                const sent = await sendNota(dataUrl)
+                // if (sent) {
+                    setLoading(false)
+                // }
+                // console.log(dataUrl);
                 // const link = document.createElement('a')
                 // link.download = 'my-image-name.png'
                 // link.href = dataUrl
@@ -97,35 +149,118 @@ function PageHome() {
             })
     }, [printRef])
 
-    useEffect(() => {
-        const currentDate = new Date();
-        const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    useEffect(()=>{
+        console.log((panjang*lebar)*qty*harga);
+        setTotal((panjang*lebar)*qty*harga)
 
-        const formattedDate = currentDate.toLocaleDateString('id-ID', options);
-        setDate(formattedDate);
-      }, []);
+
+    },[panjang, lebar, qty, harga])
+
+    useEffect(()=>{
+        if (nameProduct === 'banner') {
+            setHarga(27000)
+        }
+    },[nameProduct])
+
+
     const sendNota = async (base64: string) => {
-        const res = await fetch(`http://localhost:8000/media`,{
-            method:'POST',
+        const res = await fetch(`http://localhost:8000/send-nota`, {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                number: '6287833372003',
+            },
+            body: JSON.stringify({
+                number: '087833372003',
                 base64
-              })
+            })
         })
         if (!res.ok) throw new Error('failed to fetch')
 
         const data = await res.json()
 
         console.log(data);
+        return data
 
     }
+
+    const grandTotal = data.reduce((accumulator, currentValue) => accumulator + parseFloat(currentValue.total), 0);
+
+
+
+       const sendMessage = () => {
+        // mengirim pesan ke server
+        socket.emit("message", "Ini adalah pesan dari client");
+      };
+
+
+      if (getData){
+        return(
+            <div>Loading</div>
+        )
+      }
+
+      if (qr) {
+        return (
+            <div className='flex w-full min-h-screen text-center justify-center'>
+                <Image className='object-cover w-80 h-80' src={qr} alt='qrCode' width={400} height={400}/>
+            </div>
+        )
+      }
+    function closeModal() {
+        setIsOpen(false)
+    }
+
+    function openModal() {
+        setIsOpen(true)
+    }
+
+    const onSubmit = (formData: any) => {
+        setdata([...data, { ...formData }]);
+        reset()
+        const nameInput = document.getElementById('name');
+        if (nameInput) {
+            nameInput.focus();
+        }
+    };
+
+    const submitData = () => {
+        let product = nameProduct
+        if(nameProduct === 'banner') {
+            product = nameProduct + ' (' + panjang + 'x' + lebar + ')'
+
+        }
+        setdata([...data, { name: product, qty, total, price:harga }]);
+        setIsOpen(false)
+        setHarga(0)
+                        setNameProduct('')
+                        setQty(1)
+                        setPanjang(1)
+                        setLebar(1)
+            // const nameInput = document.getElementById('name');
+            // if (nameInput) {
+            //     nameInput.focus();
+            // }
+
+    }
+
+    // useEffect(() => {
+    //     socketInitializer();
+    //   }, []);
+
+    //   const socketInitializer = async () => {
+    //     // We just call it because we don't need anything else out of it
+    //     await fetch("http://localhost:8000");
+
+    //     socket = io();
+    //     socket.on("connection", (msg) => {
+    //       console.log(msg);
+    //     });
+    //   };
+
     return (
         <div className='w-full p-20'>
 
-            <div className='mt-6'>
+            {/* <div className='mt-6 max-w-4xl mx-auto'>
                 <form onSubmit={handleSubmit(onSubmit)} className='w-full'>
                     <div className="grid grid-cols-12 gap-4">
                         <div className='flex flex-col col-span-3'>
@@ -149,8 +284,137 @@ function PageHome() {
                         <button type='submit' className='mr-8 border rounded-md px-4 py-1.5 bg-blue-700 text-white'>Submit</button>
                     </div>
                 </form>
+            </div> */}
+            <div className="mt-6 max-w-4xl mx-auto flex items-center justify-between">
+                <button onClick={openModal} className='mr-8 border rounded-md px-4 py-1.5 bg-blue-700 text-white'>Add Data (F1)</button>
+                <button  onClick={capture} className={`ml-8 border rounded-md px-4 py-1.5 text-white ${customer.noTlp ?'bg-blue-700':'cursor-not-allowed bg-blue-700'}`}>Kirim</button>
+
+                <Transition appear show={isOpen} as={Fragment}>
+                    <Dialog as="div" className="relative z-10" onClose={()=>{
+                        closeModal()
+                        setHarga(0)
+                        setNameProduct('')
+                        setQty(1)
+                        setPanjang(1)
+                        setLebar(1)
+                    }}>
+                        <Transition.Child
+                            as={Fragment}
+                            enter="ease-out duration-300"
+                            enterFrom="opacity-0"
+                            enterTo="opacity-100"
+                            leave="ease-in duration-200"
+                            leaveFrom="opacity-100"
+                            leaveTo="opacity-0"
+                        >
+                            <div className="fixed inset-0 bg-black bg-opacity-50" />
+                        </Transition.Child>
+
+                        <div className="fixed inset-0 overflow-y-auto">
+                            <div className="flex min-h-[300px] justify-center p-4 pt-14 text-center">
+                                <Transition.Child
+                                    as={Fragment}
+                                    enter="ease-out duration-[400]"
+                                    enterFrom="opacity-0 -translate-y-10"
+                                    enterTo="opacity-100 translate-y-0"
+                                    leave="ease-in duration-[400]"
+                                    leaveFrom="opacity-100 translate-y-0"
+                                    leaveTo="opacity-0 -translate-y-10"
+                                >
+                                    <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                                        {/* <Dialog.Title
+                                            as="h3"
+                                            className="text-lg font-medium leading-6 text-gray-900"
+                                        >
+                                            Payment successful
+                                        </Dialog.Title> */}
+                                        {!customer.noTlp && (
+
+
+                                        <div className="mt-2 space-y-4">
+                                            <div className='grid grid-cols-12 gap-4'>
+                                                <label className='col-span-3' htmlFor="to">To</label>
+                                                <input value={nameCustomer} onChange={(e:any)=> setNameCustomer(e.target.value)} className='col-span-9' type="text" id='to' name='to' placeholder='NAME'/>
+                                            </div>
+
+                                            <div className='grid grid-cols-12 gap-4'>
+                                                <label className='col-span-3' htmlFor="noTlp">No Telp</label>
+                                                <input value={toCustomer} onChange={(e:any)=> setToCustomer(e.target.value)} className='col-span-9' type="text" id='noTlp' name='noTlp' placeholder='628*** / 08***'/>
+                                            </div>
+
+                                            <div className="mt-4">
+                                            <button
+                                                type="button"
+                                                className="inline-flex justify-center rounded-md border border-transparent bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                                                onClick={(e:any)=> {
+                                                    setCustomer({name: nameCustomer, noTlp: toCustomer})
+                                                    alert(JSON.stringify({name: nameCustomer, noTlp: toCustomer}))
+                                                }}
+                                            >
+                                                submit
+                                            </button>
+                                            </div>
+                                        </div>
+                                        )}
+{customer.noTlp && (
+    <div>
+
+<div className='space-y-4'>
+                                            <div className='grid grid-cols-12 gap-4'>
+                                                <label className='col-span-3' htmlFor="name">Name</label>
+                                                <input className='col-span-9' type="text" onChange={(e:any)=>{
+                                                    setNameProduct(e.target.value)
+
+                                                }} value={nameProduct}/>
+                                            </div>
+                                            {nameProduct === 'banner' && (
+                                                <div className='grid grid-cols-12 gap-4'>
+                                                <label className='col-span-3' htmlFor="name">Panjang</label>
+                                                <input className='col-span-3' type="text" value={panjang} onChange={(e:any)=>{setPanjang(e.target.value)}}/>
+                                                <label className='col-span-3' htmlFor="name">Lebar</label>
+                                                <input className='col-span-3' type="text" value={lebar} onChange={(e:any)=>{setLebar(e.target.value)}}/>
+                                            </div>
+                                            )}
+                                            <div className='grid grid-cols-12 gap-4'>
+                                                <label className='col-span-3' htmlFor="name">Qty</label>
+                                                <input className='col-span-3' type="text" value={qty} onPointerCancel={()=>alert('cancel')} onChange={(e:any)=>{setQty(e.target.value)}}/>
+                                                <label className='col-span-3' htmlFor="name">Harga</label>
+                                                <input value={harga} onChange={(e:any)=>{setHarga(e.target.value)}} className='col-span-3' type="number" />
+                                            </div>
+
+                                            <div className='flex items-center justify-between'>
+                                                <label>Total</label>
+                                                <input  type="hidden" id='total' name='total' placeholder='0' value={total} onChange={(e:any)=>{setTotal(e.target.value)}} />
+                                                <label className='font-bold w-40 border border-blue-600 text-right rounded pr-1.5 py-1'>{total ? total : '-'}</label>
+                                            </div>
+                                        </div>
+<div className="mt-4">
+                                            <button
+                                                type="button"
+                                                className="inline-flex justify-center rounded-md border border-transparent bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                                                // onClick={closeModal}
+                                                // onClick={()=>{
+                                                //     alert(JSON.stringify({qty, harga, total}))
+                                                // }}
+                                                onClick={submitData}
+                                            >
+                                                Save
+                                            </button>
+                                        </div>
+    </div>
+
+
+
+)}
+
+                                    </Dialog.Panel>
+                                </Transition.Child>
+                            </div>
+                        </div>
+                    </Dialog>
+                </Transition>
             </div>
-            <div className={`max-w-4xl mx-auto border ${roboto.className}`}>
+            <div className={`max-w-4xl mt-6 mx-auto border ${roboto.className}`}>
                 <div style={{ fontFamily: 'Arial, sans-serif', backgroundColor: '#fff', width: '100%' }} id='print' className='mx-auto print p-6 min-h-[400px] flex flex-col' ref={printRef}>
                     <div className='w-full flex'>
                         <div className='w-[60%] text-red-500 py-1'>
@@ -173,7 +437,7 @@ function PageHome() {
                         <div className='w-[40%] flex justify-end text-left'>
                             <div className='w-[350px] text-red-500 leading-6'>
                                 <table>
-                                <tr>
+                                    <tr>
                                         <td className='w-[110px]'>No Nota</td>
                                         <td>:</td>
                                         <td>00001/RDGP/02/05</td>
@@ -186,7 +450,7 @@ function PageHome() {
                                     <tr>
                                         <td>To</td>
                                         <td>:</td>
-                                        <td>...............</td>
+                                        <td>{customer.name ? customer.name : '...............'}</td>
                                     </tr>
                                 </table>
 
@@ -228,9 +492,15 @@ function PageHome() {
                 </div>
             </div>
 
-            <button onClick={capture} className='mr-8 border rounded-md px-4 py-1.5 bg-blue-700 text-white'>Kirim</button>
 
 
+            {loading && (
+                <div className="loading absolute inset-0 w-full h-full bg-black/50 flex items-center justify-center z-10">
+                    <div className="flex items-center justify-center ">
+                        <div className="w-16 h-16 border-b-2 border-blue-600 rounded-full animate-spin"></div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
