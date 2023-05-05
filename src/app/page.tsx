@@ -41,7 +41,7 @@ function PageHome() {
     const [nameProduct, setNameProduct] = useState('')
     const [customer, setCustomer] = useState({
         name:'',
-        noTlp:null
+        noTlp:''
     })
     const [nameCustomer, setNameCustomer] = useState('')
     const [toCustomer, setToCustomer] = useState('')
@@ -182,7 +182,7 @@ function PageHome() {
         return data
 
     }
-
+// @ts-ignore
     const grandTotal = data.reduce((accumulator, currentValue) => accumulator + parseFloat(currentValue.total), 0);
 
 
@@ -347,6 +347,7 @@ function PageHome() {
                                                 type="button"
                                                 className="inline-flex justify-center rounded-md border border-transparent bg-blue-100 px-4 py-2 text-sm font-medium text-blue-900 hover:bg-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                                                 onClick={(e:any)=> {
+                                                    // @ts-node
                                                     setCustomer({name: nameCustomer, noTlp: toCustomer})
                                                     alert(JSON.stringify({name: nameCustomer, noTlp: toCustomer}))
                                                 }}
@@ -472,9 +473,11 @@ function PageHome() {
                                 <tr key={index}>
                                     <td className='border text-center'>{index + 1}</td>
                                     <td className='border pl-4'>{item.name}</td>
-                                    <td className='border text-right pr-4'>{parseInt(item.price).toLocaleString()}</td>
+                                    {/* @ts-nignore */}
+                                    <td className='border text-right pr-4'>{item.price.toLocaleString()}</td>
                                     <td className='border text-center'>{item.qty}</td>
-                                    <td className='border text-right pr-4'>{parseInt(item.total).toLocaleString()}</td>
+                                    {/* @ts-nignore */}
+                                    <td className='border text-right pr-4'>{item.total.toLocaleString()}</td>
                                 </tr>
                             ))}
                             {data.length > 0 && (
